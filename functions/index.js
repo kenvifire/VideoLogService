@@ -3,44 +3,46 @@
 const functions = require("firebase-functions");
 const sanitizer = require("./sanitizer");
 const admin = require("firebase-admin");
+const {user} = require("firebase-functions/v1/auth");
+
+
 admin.initializeApp();
 
 // [START allAdd]
 // [START addFunctionTrigger]
-exports.uploadVideLog = functions.https.onCall((data) => {
-  // [END addFunctionTrigger]
-  // [START readAddData]
-  const firstNumber = data.firstNumber;
-  const secondNumber = data.secondNumber;
-  // [END readAddData]
-
-  // [START addHttpsError]
-  // Checking that attributes are present and are numbers.
-  if (!Number.isFinite(firstNumber) || !Number.isFinite(secondNumber)) {
+exports.addVideoLog = functions.https.onCall((data, context) => {
+  if (!context.auth) {
     // Throwing an HttpsError so that the client gets the error details.
     throw new functions.https.HttpsError(
-        "invalid-argument",
-        "The function must be called with " +
-        "two arguments \"firstNumber\" and \"secondNumber\" " +
-        "which must both be numbers."
+        "failed-precondition",
+        "The function must be called " + "while authenticated."
     );
   }
-  // [END addHttpsError]
 
-  // [START returnAddData]
-  // returning result.
+  const userId = context.auth.uid;
+  admin.firestore().collection("usages").doc(userId).get().then(
+      (doc) => {
+        if (doc.exists) {
+          console.log(`${JSON.stringify(doc)}`);
+        } else {
+          throw new functions.https.HttpsError(
+              "failed-precondition",
+              `No associated usage plan with user ${userId}`
+          );
+        }
+      })
+      .catch((error) => {
+        throw new functions.https.HttpsError("unknown", error, error.message);
+      });
+
+
   return {
-    firstNumber: firstNumber,
-    secondNumber: secondNumber,
-    operator: "+",
-    operationResult: firstNumber + secondNumber,
+    "user": userId,
   };
-  // [END returnAddData]
 });
 // [END allAdd]
 
 // [START messageFunctionTrigger]
-// Saves a message to the Firebase Realtime Database
 // but sanitizes the text by removing swearwords.
 exports.addVipUser = functions.https.onCall((data, context) => {
   // [START_EXCLUDE]
