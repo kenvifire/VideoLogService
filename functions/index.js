@@ -2,43 +2,50 @@
 
 const functions = require("firebase-functions");
 const sanitizer = require("./sanitizer");
+const videoLogService = require("./services/videologservice");
+const planService = require("./services/planService");
+const {SUCCESS} = require("./constants");
+
 const admin = require("firebase-admin");
-const {user} = require("firebase-functions/v1/auth");
 
+// eslint-disable-next-line max-len
+const serviceAccount = require("./videolog-23d84-firebase-adminsdk-n79mr-acb6214e38.json");
 
-admin.initializeApp();
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 // [START allAdd]
 // [START addFunctionTrigger]
-exports.addVideoLog = functions.https.onCall((data, context) => {
+exports.addVideoLog = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     // Throwing an HttpsError so that the client gets the error details.
     throw new functions.https.HttpsError(
         "failed-precondition",
-        "The function must be called " + "while authenticated."
+        "The function must be called " + "while authenticated.",
     );
   }
 
   const userId = context.auth.uid;
-  admin.firestore().collection("usages").doc(userId).get().then(
-      (doc) => {
-        if (doc.exists) {
-          console.log(`${JSON.stringify(doc)}`);
-        } else {
-          throw new functions.https.HttpsError(
-              "failed-precondition",
-              `No associated usage plan with user ${userId}`
-          );
-        }
-      })
-      .catch((error) => {
-        throw new functions.https.HttpsError("unknown", error, error.message);
-      });
+  await videoLogService.addVideoLog(userId, data);
+  const size = await videoLogService.readLogSize(userId, data.videoName);
 
+  const usage = await videoLogService.getUsagePlan(userId);
 
-  return {
-    "user": userId,
-  };
+  const quota = planService.plans[usage.plan].quota;
+  if (quota >= 0 && size + usage.usage > quota) {
+    await videoLogService.removeLogFile(userId, data.videoName);
+
+    throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Usage exceed.",
+    );
+  } else {
+    await videoLogService.updateUsage(userId, size);
+    return {
+      "status": SUCCESS,
+    };
+  }
 });
 // [END allAdd]
 
@@ -57,7 +64,7 @@ exports.addVipUser = functions.https.onCall((data, context) => {
     throw new functions.https.HttpsError(
         "invalid-argument",
         "The function must be called with " +
-        "one arguments \"text\" containing the message text to add."
+        "one arguments \"text\" containing the message text to add.",
     );
   }
   // Checking that the user is authenticated.
@@ -65,7 +72,7 @@ exports.addVipUser = functions.https.onCall((data, context) => {
     // Throwing an HttpsError so that the client gets the error details.
     throw new functions.https.HttpsError(
         "failed-precondition",
-        "The function must be called " + "while authenticated."
+        "The function must be called " + "while authenticated.",
     );
   }
   // [END messageHttpsErrors]
@@ -97,7 +104,7 @@ exports.addVipUser = functions.https.onCall((data, context) => {
         })
     // [END returnMessageAsync]
         .catch((error) => {
-        // Re-throwing the error as an HttpsError so that
+          // Re-throwing the error as an HttpsError so that
           // the client gets the error details.
           throw new functions.https.HttpsError("unknown", error.message, error);
         })
