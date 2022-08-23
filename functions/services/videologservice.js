@@ -1,21 +1,82 @@
 "use strict";
 
 const admin = require("firebase-admin");
-const {VIDEO_LOGS, VIDEOS, USAGE, BUCKET} = require("../constants");
+const {VIDEO_LOGS, VIDEOS, USAGE, BUCKET, SUCCESS} = require("../constants");
 const functions = require("firebase-functions");
-const {getStorage} = require("firebase-admin/storage");
+const _ = require("lodash");
+const planService = require("./planService");
 
-
-module.exports.addVideoLog = async function(uid, videoLog) {
-  await admin.firestore().collection(VIDEO_LOGS).doc(uid).update(
-      {
+/**
+ * Add a videolog record.
+ * @param {string} uid uid for user.
+ * @param {Object} videoLog log record.
+ * @return {Promise<void>} void.
+ */
+async function addVideoLog(uid, videoLog) {
+  await admin
+      .firestore()
+      .collection(VIDEO_LOGS)
+      .doc(uid)
+      .update({
         logs: [videoLog],
-      },
-  );
-};
+      });
+  const size = await readLogSize(uid, videoLog.videoName);
 
-module.exports.readLogSize = async function(uid, fileName) {
-  const file = admin.storage().bucket(BUCKET)
+  const usage = await getUsagePlan(uid);
+
+  const quota = planService.plans[usage.plan].quota;
+  if (quota >= 0 && size + usage.usage > quota) {
+    await removeLogFile(uid, videoLog.videoName);
+
+    throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Usage exceed.",
+    );
+  } else {
+    await updateUsage(uid, size);
+    return {
+      "status": SUCCESS,
+    };
+  }
+}
+
+/**
+ * Remove a videolog record.
+ * @param {string} uid for user.
+ * @param {string} recordId record to be removed.
+ * @return {Promise<void>} void.
+ */
+async function removeVideoLog(uid, recordId) {
+  const snapshot = await admin
+      .firestore()
+      .collection(VIDEO_LOGS)
+      .doc(uid)
+      .get();
+  if (!snapshot.exists) {
+    throw new functions.https.HttpsError(
+        "failed-precondition",
+        "$recordId for user $uid dose not exist",
+    );
+  }
+  const data = snapshot.data();
+  const record = _.filter(data, {recordId: recordId});
+
+  const size = await readLogSize(uid, record.fileName);
+  await removeLogFile(uid, record.fileName);
+
+  await updateUsage(uid, -size);
+}
+
+/**
+ * Read log size.
+ * @param {string} uid for user.
+ * @param {string} fileName file to be deleted.
+ * @return {Promise<number>} void.
+ */
+async function readLogSize(uid, fileName) {
+  const file = admin
+      .storage()
+      .bucket(BUCKET)
       .file(VIDEOS + "/" + uid + "/" + fileName);
   const exists = await file.exists();
   if (exists) {
@@ -27,10 +88,18 @@ module.exports.readLogSize = async function(uid, fileName) {
         "$file for user $uid dose not exist",
     );
   }
-};
+}
 
-module.exports.removeLogFile = async function(uid, fileName) {
-  const file = admin.storage().bucket(BUCKET)
+/**
+ * Remove a video log file.
+ * @param {string} uid , for user.
+ * @param {string} fileName, file to be delete.
+ * @return {Promise<void>}, void return.
+ */
+async function removeLogFile(uid, fileName) {
+  const file = admin
+      .storage()
+      .bucket(BUCKET)
       .file(VIDEOS + "/" + uid + "/" + fileName);
   const exists = await file.exists();
   if (exists) {
@@ -41,9 +110,14 @@ module.exports.removeLogFile = async function(uid, fileName) {
         "$file for user $uid dose not exist",
     );
   }
-};
+}
 
-module.exports.getUsagePlan = async function(uid) {
+/**
+ * Get usage plan for a user.
+ * @param {string} uid for user.
+ * @return {Promise<DocumentData>} usage data.
+ */
+async function getUsagePlan(uid) {
   const usageRef = admin.firestore().collection(USAGE).doc(uid);
   const doc = await usageRef.get();
   if (!doc.exists) {
@@ -54,12 +128,33 @@ module.exports.getUsagePlan = async function(uid) {
   } else {
     return doc.data();
   }
-};
+}
 
-module.exports.updateUsage = async function(uid, usage) {
-  await admin.firestore().collection(USAGE).doc(uid).update(
-      {
+/**
+ * Update usage plan.
+ * @param {string} uid for user.
+ * @param {number} usage for usage.
+ * @return {Promise<void>} void.
+ */
+async function updateUsage(uid, usage) {
+  const curr = getUsagePlan(uid);
+  if (curr + usage < 0) {
+    throw new functions.https.HttpsError(
+        "failed-precondition",
+        "invalid usage for $uid",
+    );
+  }
+
+  await admin
+      .firestore()
+      .collection(USAGE)
+      .doc(uid)
+      .update({
         usage: admin.firestore.FieldValue.increment(usage),
-      },
-  );
+      });
+}
+
+module.exports = {
+  addVideoLog,
+  removeVideoLog,
 };

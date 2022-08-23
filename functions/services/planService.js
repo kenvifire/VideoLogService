@@ -7,6 +7,7 @@ const {USAGE} = require("../constants");
 class Plan {
   // name: name of plan
   // quota
+  // eslint-disable-next-line require-jsdoc
   constructor(name, quota) {
     this.name = name;
     this.quota = quota;

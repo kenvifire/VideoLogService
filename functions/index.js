@@ -2,14 +2,10 @@
 
 const functions = require("firebase-functions");
 const sanitizer = require("./sanitizer");
-const videoLogService = require("./services/videologservice");
-const planService = require("./services/planService");
-const {SUCCESS} = require("./constants");
-
 const admin = require("firebase-admin");
 
-// eslint-disable-next-line max-len
 const serviceAccount = require("./videolog-23d84-firebase-adminsdk-n79mr-acb6214e38.json");
+const {addVideoLog, removeVideoLog} = require("./services/videologservice");
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -25,29 +21,22 @@ exports.addVideoLog = functions.https.onCall(async (data, context) => {
         "The function must be called " + "while authenticated.",
     );
   }
-
   const userId = context.auth.uid;
-  await videoLogService.addVideoLog(userId, data);
-  const size = await videoLogService.readLogSize(userId, data.videoName);
-
-  const usage = await videoLogService.getUsagePlan(userId);
-
-  const quota = planService.plans[usage.plan].quota;
-  if (quota >= 0 && size + usage.usage > quota) {
-    await videoLogService.removeLogFile(userId, data.videoName);
-
-    throw new functions.https.HttpsError(
-        "failed-precondition",
-        "Usage exceed.",
-    );
-  } else {
-    await videoLogService.updateUsage(userId, size);
-    return {
-      "status": SUCCESS,
-    };
-  }
+  await addVideoLog(userId, data);
 });
 // [END allAdd]
+
+exports.removeVideoLog = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    // Throwing an HttpsError so that the client gets the error details.
+    throw new functions.https.HttpsError(
+        "failed-precondition",
+        "The function must be called " + "while authenticated.",
+    );
+  }
+  const userId = context.auth.uid;
+  await removeVideoLog(userId, data.recordId);
+});
 
 // [START messageFunctionTrigger]
 // but sanitizes the text by removing swearwords.
