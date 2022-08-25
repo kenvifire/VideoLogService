@@ -1,7 +1,8 @@
 "use strict";
 
 const admin = require("firebase-admin");
-const {VIDEO_LOGS, VIDEOS, USAGE, BUCKET, SUCCESS} = require("../constants");
+const {VIDEO_LOGS, VIDEOS, USAGE, BUCKET, SUCCESS,
+  ERROR_VIDEO_FILE_NOT_EXIST, ERROR_USAGE_EXCEED} = require("../constants");
 const functions = require("firebase-functions");
 const _ = require("lodash");
 const planService = require("./planService");
@@ -10,7 +11,7 @@ const planService = require("./planService");
  * Add a videolog record.
  * @param {string} uid uid for user.
  * @param {Object} videoLog log record.
- * @return {Promise<void>} void.
+ * @return {Promise<{status: string}>} void.
  */
 async function addVideoLog(uid, videoLog) {
   await admin
@@ -30,7 +31,7 @@ async function addVideoLog(uid, videoLog) {
 
     throw new functions.https.HttpsError(
         "failed-precondition",
-        "Usage exceed.",
+        ERROR_USAGE_EXCEED,
     );
   } else {
     await updateUsage(uid, size);
@@ -55,7 +56,7 @@ async function removeVideoLog(uid, recordId) {
   if (!snapshot.exists) {
     throw new functions.https.HttpsError(
         "failed-precondition",
-        "$recordId for user $uid dose not exist",
+        ERROR_VIDEO_FILE_NOT_EXIST,
     );
   }
   const data = snapshot.data();
@@ -85,7 +86,7 @@ async function readLogSize(uid, fileName) {
   } else {
     throw new functions.https.HttpsError(
         "unknown",
-        "$file for user $uid dose not exist",
+        `${file} for user ${uid} dose not exist`,
     );
   }
 }
@@ -107,7 +108,7 @@ async function removeLogFile(uid, fileName) {
   } else {
     throw new functions.https.HttpsError(
         "unknown",
-        "$file for user $uid dose not exist",
+        ERROR_VIDEO_FILE_NOT_EXIST,
     );
   }
 }
@@ -123,7 +124,7 @@ async function getUsagePlan(uid) {
   if (!doc.exists) {
     throw new functions.https.HttpsError(
         "unknown",
-        "usage plan does not exist for user $uid",
+        `usage plan does not exist for user ${uid}`,
     );
   } else {
     return doc.data();
@@ -141,7 +142,7 @@ async function updateUsage(uid, usage) {
   if (curr + usage < 0) {
     throw new functions.https.HttpsError(
         "failed-precondition",
-        "invalid usage for $uid",
+        `invalid usage for ${uid}`,
     );
   }
 
