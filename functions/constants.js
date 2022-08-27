@@ -1,5 +1,5 @@
 module.exports = {
-  USAGE: "usage",
+  USAGE: "usages",
   USER_PREFERENCES: "user_preferences",
   VIDEO_LOGS: "video_logs",
   THUMBNAILS: "thumbnails",

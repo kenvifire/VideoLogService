@@ -7,6 +7,18 @@ const functions = require("firebase-functions");
 const _ = require("lodash");
 const planService = require("./planService");
 
+
+/**
+ * Init user data
+ * @param {string} uid
+ * @return {Promise<void>}
+ */
+async function initUserData(uid) {
+  await admin.firestore().collection(VIDEO_LOGS).doc().set({
+    logs: [],
+  });
+}
+
 /**
  * Add a videolog record.
  * @param {string} uid uid for user.
@@ -19,7 +31,7 @@ async function addVideoLog(uid, videoLog) {
       .collection(VIDEO_LOGS)
       .doc(uid)
       .update({
-        logs: [videoLog],
+        logs: admin.firestore.FieldValue.arrayUnion(videoLog),
       });
   const size = await readLogSize(uid, videoLog.videoName);
 
@@ -158,4 +170,5 @@ async function updateUsage(uid, usage) {
 module.exports = {
   addVideoLog,
   removeVideoLog,
+  initUserData,
 };

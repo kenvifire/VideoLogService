@@ -1,5 +1,6 @@
 const admin = require("firebase-admin");
-const {USAGE} = require("../constants");
+const {USAGE, USER_PREFERENCES} = require("../constants");
+const functions = require("firebase-functions");
 
 /**
  * Class for usage plan.
@@ -22,15 +23,45 @@ const plans = {
   PLAN_50G: new Plan("PLAN_50G", 50 * 1024 * 1024),
 };
 
-module.exports.updatePlan = function(uid, planName) {
+/**
+ * update {string} user plan.
+ * @param {string} uid user id.
+ * @param planName plan name.
+ * @return {Promise<FirebaseFirestore.WriteResult>}
+ */
+function updatePlan(uid, planName) {
+  if (!plans[planName]) {
+    throw new functions.https.HttpsError(
+        "failed-precondition",
+        `invalid plan ${planName}`,
+    );
+  }
   return admin.firestore().collection(USAGE).doc(uid).update({
     Plan: planName,
   });
-};
+}
 
-module.exports.FREE = plans.FREE.name;
-module.exports.PLAN_5G = plans.PLAN_5G.name;
-module.exports.PLAN_10G = plans.PLAN_10G.name;
-module.exports.PLAN_20G = plans.PLAN_20G.name;
-module.exports.PLAN_50G = plans.PLAN_50G.name;
-module.exports.plans = plans;
+/**
+ *
+ * @param uid
+ * @return {Promise<FirebaseFirestore.WriteResult>}
+ */
+function initPlan(uid) {
+  return admin.firestore().collection(USAGE).doc(uid).set(
+      {
+        Plan: "FREE",
+        Usage: 0,
+      });
+}
+
+
+module.exports = {
+  FREE: plans.FREE.name,
+  PLAN_5G: plans.PLAN_5G.name,
+  PLAN_10G: plans.PLAN_10G.name,
+  PLAN_20G: plans.PLAN_20G.name,
+  PLAN_50G: plans.PLAN_50G.name,
+  plans,
+  initPlan,
+  updatePlan,
+};
